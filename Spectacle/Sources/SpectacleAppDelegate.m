@@ -1,11 +1,15 @@
+#import "SpectacleAppDelegate.h"
+
 #import <Sparkle/Sparkle.h>
 
 #import "SpectacleAccessibilityElement.h"
-#import "SpectacleAppDelegate.h"
+#import "SpectacleDefaultShortcutHelpers.h"
+#import "SpectacleMigratingShortcutStorage.h"
 #import "SpectaclePreferencesController.h"
 #import "SpectacleScreenDetector.h"
+#import "SpectacleShortcutJSONStorage.h"
 #import "SpectacleShortcutManager.h"
-#import "SpectacleShortcutTranslator.h"
+#import "SpectacleShortcutTranslations.h"
 #import "SpectacleShortcutUserDefaultsStorage.h"
 #import "SpectacleUtilities.h"
 #import "SpectacleWindowPositionCalculator.h"
@@ -49,6 +53,10 @@
                          selector:@selector(menuDidSendAction:)
                              name:NSMenuDidSendActionNotification
                            object:nil];
+  [notificationCenter addObserver:self
+                         selector:@selector(inputSourceSelectionDidChange)
+                             name:NSTextInputContextKeyboardSelectionDidChangeNotification
+                           object:nil];
   [workspaceNotificationCenter addObserver:self
                                   selector:@selector(applicationDidActivate:)
                                       name:NSWorkspaceDidActivateApplicationNotification
@@ -81,7 +89,8 @@
   NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
   _blacklistedApplications = [NSSet setWithArray:[userDefaults objectForKey:@"BlacklistedApplications"]];
   _disabledApplications = [NSMutableSet setWithArray:[userDefaults objectForKey:@"DisabledApplications"]];
-  _shortcutStorage = [SpectacleShortcutUserDefaultsStorage new];
+  _shortcutStorage = [[SpectacleMigratingShortcutStorage alloc] initWithShortcutStorage:[SpectacleShortcutUserDefaultsStorage new]
+                                                                   migrationDestination:[SpectacleShortcutJSONStorage new]];
   _shortcutManager = [[SpectacleShortcutManager alloc] initWithShortcutStorage:_shortcutStorage];
   SpectacleWindowPositionCalculator *windowPositionCalculator = [[SpectacleWindowPositionCalculator alloc] initWithErrorHandler:^(NSString *errorMessage) {
     NSAlert *alert = [NSAlert new];
@@ -277,13 +286,23 @@
   }
 }
 
+- (void)dealloc
+{
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)manageShortcuts
 {
-  NSArray<SpectacleShortcut *> *shortcuts = [_shortcutStorage loadShortcutsWithAction:^(SpectacleShortcut *shortcut) {
+  SpectacleShortcutAction action = ^(SpectacleShortcut *shortcut) {
     [_windowPositionManager moveFrontmostWindowElement:[SpectacleAccessibilityElement frontmostWindowElement]
                                                 action:shortcut.windowAction];
-  }];
-  [_shortcutManager manageShortcuts:shortcuts];
+  };
+  NSArray<SpectacleShortcut *> *shortcuts = [_shortcutStorage loadShortcutsWithAction:action];
+  if (shortcuts.count != 0) {
+    [_shortcutManager manageShortcuts:shortcuts];
+  } else {
+    [_shortcutManager manageShortcuts:SpectacleDefaultShortcutsWithAction(action)];
+  }
 }
 
 - (void)enableStatusItem
@@ -304,13 +323,12 @@
 
 - (void)updateShortcutMenuItems
 {
-  SpectacleShortcutTranslator *shortcutTranslator = [SpectacleShortcutTranslator sharedTranslator];
   for (NSString *shortcutName in _shortcutMenuItems.allKeys) {
     NSMenuItem *shortcutMenuItem = _shortcutMenuItems[shortcutName];
     SpectacleShortcut *shortcut = [_shortcutManager shortcutForShortcutName:shortcutName];
     if (shortcut) {
-      shortcutMenuItem.keyEquivalent = [[shortcutTranslator translateKeyCode:shortcut.shortcutCode] lowercaseString];
-      shortcutMenuItem.keyEquivalentModifierMask = [SpectacleShortcutTranslator convertModifiersToCocoaIfNecessary:shortcut.shortcutModifiers];
+      shortcutMenuItem.keyEquivalent = [SpectacleTranslateKeyCode(shortcut.shortcutKeyCode) lowercaseString];
+      shortcutMenuItem.keyEquivalentModifierMask = SpectacleConvertModifiersToCocoaIfNecessary(shortcut.shortcutModifiers);
     } else {
       shortcutMenuItem.keyEquivalent = @"";
       shortcutMenuItem.keyEquivalentModifierMask = 0;
@@ -322,7 +340,9 @@
 {
   NSRunningApplication *frontmostApplication = [NSWorkspace sharedWorkspace].frontmostApplication;
   // Do not enable shortcuts if they should remain disabled for an hour.
-  if (_shortcutsAreDisabledForAnHour) return;
+  if (_shortcutsAreDisabledForAnHour) {
+    return;
+  }
   // Do not enable shortcuts if the application is blacklisted or disabled.
   if ([_blacklistedApplications containsObject:frontmostApplication.bundleIdentifier]
       || [_disabledApplications containsObject:frontmostApplication.bundleIdentifier]) {
@@ -383,6 +403,12 @@
   if (menuItem.tag == -1) {
     [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
   }
+}
+
+- (void)inputSourceSelectionDidChange
+{
+  [_preferencesController loadRegisteredShortcuts];
+  [self updateShortcutMenuItems];
 }
 
 @end

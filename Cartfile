@@ -1,4 +1,5 @@
-github "jonreid/OCMockito" "master"
+github "hamcrest/OCHamcrest" == 5.3
+github "jonreid/OCMockito" ~> 3.0
 github "sparkle-project/Sparkle" ~> 1.14
 github "specta/expecta" ~> 1.0
 github "specta/specta" ~> 1.0

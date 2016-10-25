@@ -9,18 +9,25 @@ typedef void(^SpectacleShortcutAction)(SpectacleShortcut *);
 
 @interface SpectacleShortcut : NSObject <NSCoding>
 
-@property (nonatomic, readonly) NSString *shortcutName;
-@property (nonatomic, readonly) NSInteger shortcutCode;
-@property (nonatomic, readonly) NSUInteger shortcutModifiers;
-@property (nonatomic, readonly) SpectacleShortcutAction shortcutAction;
-@property (nonatomic, readonly) SpectacleWindowAction *windowAction;
+@property (nonatomic, readonly, copy) NSString *shortcutName;
+@property (nonatomic, readonly, assign) NSInteger shortcutKeyCode;
+@property (nonatomic, readonly, assign) NSUInteger shortcutModifiers;
+@property (nonatomic, readonly, strong) SpectacleShortcutAction shortcutAction;
+@property (nonatomic, readonly, copy) NSString *shortcutKeyBinding;
+@property (nonatomic, readonly, strong) SpectacleWindowAction *windowAction;
+
+- (instancetype)initWithShortcutName:(NSString *)shortcutName shortcutKeyBinding:(NSString *)shortcutKeyBinding;
 
 - (instancetype)initWithShortcutName:(NSString *)shortcutName
-                        shortcutCode:(NSInteger)shortcutCode
+                  shortcutKeyBinding:(NSString *)shortcutKeyBinding
+                      shortcutAction:(SpectacleShortcutAction)shortcutAction;
+
+- (instancetype)initWithShortcutName:(NSString *)shortcutName
+                     shortcutKeyCode:(NSInteger)shortcutKeyCode
                    shortcutModifiers:(NSUInteger)shortcutModifiers;
 
 - (instancetype)initWithShortcutName:(NSString *)shortcutName
-                        shortcutCode:(NSInteger)shortcutCode
+                     shortcutKeyCode:(NSInteger)shortcutKeyCode
                    shortcutModifiers:(NSUInteger)shortcutModifiers
                       shortcutAction:(SpectacleShortcutAction)shortcutAction NS_DESIGNATED_INITIALIZER;
 
@@ -34,9 +41,11 @@ SPECTACLE_INIT_AND_NEW_UNAVAILABLE
 
 - (NSString *)displayString;
 
-+ (BOOL)validCocoaModifiers:(NSUInteger)modifiers;
-
 - (BOOL)isEqual:(id)object;
 - (BOOL)isEqualToShortcut:(SpectacleShortcut *)shortcut;
+
+- (BOOL)containsModifiers:(NSUInteger)modifiers;
+
++ (BOOL)validCocoaModifiers:(NSUInteger)modifiers;
 
 @end

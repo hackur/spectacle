@@ -1,13 +1,16 @@
+#import "SpectaclePreferencesController.h"
+
 #import <QuartzCore/QuartzCore.h>
 
 #import "SpectacleAccessibilityElement.h"
+#import "SpectacleDefaultShortcutHelpers.h"
 #import "SpectacleLoginItemHelper.h"
-#import "SpectaclePreferencesController.h"
 #import "SpectacleRegisteredShortcutValidator.h"
 #import "SpectacleShortcut.h"
 #import "SpectacleShortcutManager.h"
 #import "SpectacleShortcutRecorder.h"
 #import "SpectacleShortcutStorage.h"
+#import "SpectacleShortcutValidation.h"
 #import "SpectacleUtilities.h"
 #import "SpectacleWindowPositionManager.h"
 
@@ -33,7 +36,7 @@
 
 - (void)windowDidLoad
 {
-  NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
+  NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
   NSInteger loginItemEnabledState = NSOffState;
   BOOL isStatusItemEnabled = [NSUserDefaults.standardUserDefaults boolForKey:@"StatusItemEnabled"];
   _shortcutRecorders = @{
@@ -61,6 +64,10 @@
                          selector:@selector(loadRegisteredShortcuts)
                              name:@"SpectacleRestoreDefaultShortcutsNotification"
                            object:nil];
+  [notificationCenter addObserver:self
+                         selector:@selector(loadRegisteredShortcuts)
+                             name:@"SpectacleRestoreDefaultShortcutsNotification"
+                           object:nil];
   if ([SpectacleLoginItemHelper isLoginItemEnabledForBundle:NSBundle.mainBundle]) {
     loginItemEnabledState = NSOnState;
   }
@@ -77,14 +84,32 @@
     [_windowPositionManager moveFrontmostWindowElement:[SpectacleAccessibilityElement frontmostWindowElement]
                                                 action:shortcut.windowAction];
   }]];
-  [NSNotificationCenter.defaultCenter postNotificationName:@"SpectacleShortcutChangedNotification" object:self];
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"SpectacleShortcutChangedNotification" object:self];
 }
 
 - (void)shortcutRecorder:(SpectacleShortcutRecorder *)shortcutRecorder
 didClearExistingShortcut:(SpectacleShortcut *)shortcut
 {
   [_shortcutManager clearShortcut:shortcut];
-  [NSNotificationCenter.defaultCenter postNotificationName:@"SpectacleShortcutChangedNotification" object:self];
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"SpectacleShortcutChangedNotification" object:self];
+}
+
+- (void)loadRegisteredShortcuts
+{
+  for (NSString *shortcutName in _shortcutRecorders.allKeys) {
+    SpectacleShortcutRecorder *shortcutRecorder = _shortcutRecorders[shortcutName];
+    SpectacleShortcut *shortcut = [_shortcutManager shortcutForShortcutName:shortcutName];
+    shortcutRecorder.shortcutName = shortcutName;
+    if (shortcut) {
+      shortcutRecorder.shortcut = shortcut;
+    }
+    shortcutRecorder.delegate = self;
+    shortcutRecorder.shortcutValidation =
+    [[SpectacleShortcutValidation alloc] initWithShortcutManager:_shortcutManager
+                                                      validators:@[
+                                                                   [SpectacleRegisteredShortcutValidator new],
+                                                                   ]];
+  }
 }
 
 - (IBAction)swapFooterViews:(id)sender
@@ -108,13 +133,13 @@ didClearExistingShortcut:(SpectacleShortcut *)shortcut
 - (IBAction)restoreDefaults:(id)sender
 {
   [SpectacleUtilities displayRestoreDefaultsAlertWithConfirmationCallback:^() {
-    NSArray<SpectacleShortcut *> *shortcuts = [_shortcutStorage defaultShortcutsWithAction:^(SpectacleShortcut *shortcut) {
+    NSArray<SpectacleShortcut *> *shortcuts = SpectacleDefaultShortcutsWithAction(^(SpectacleShortcut *shortcut) {
       [_windowPositionManager moveFrontmostWindowElement:[SpectacleAccessibilityElement frontmostWindowElement]
                                                   action:shortcut.windowAction];
-    }];
+    });
     [_shortcutManager updateShortcuts:shortcuts];
-    [NSNotificationCenter.defaultCenter postNotificationName:@"SpectacleRestoreDefaultShortcutsNotification"
-                                                      object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SpectacleRestoreDefaultShortcutsNotification"
+                                                        object:self];
   }];
 }
 
@@ -151,35 +176,14 @@ didClearExistingShortcut:(SpectacleShortcut *)shortcut
     }
   }
   if (statusItemStateChanged) {
-    [NSNotificationCenter.defaultCenter postNotificationName:notificationName object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:notificationName object:self];
     [userDefaults setBool:isStatusItemEnabled forKey:@"StatusItemEnabled"];
   }
 }
 
-- (void)loadRegisteredShortcuts
+- (void)dealloc
 {
-  SpectacleRegisteredShortcutValidator *shortcutValidator = [SpectacleRegisteredShortcutValidator new];
-  for (NSString *shortcutName in _shortcutRecorders.allKeys) {
-    SpectacleShortcutRecorder *shortcutRecorder = _shortcutRecorders[shortcutName];
-    SpectacleShortcut *shortcut = [_shortcutManager shortcutForShortcutName:shortcutName];
-    shortcutRecorder.shortcutName = shortcutName;
-    if (shortcut) {
-      shortcutRecorder.shortcut = shortcut;
-    }
-    shortcutRecorder.delegate = self;
-    [shortcutRecorder setAdditionalShortcutValidators:@[shortcutValidator] shortcutManager:_shortcutManager];
-  }
-  [self enableShortcutRecorders:YES];
-}
-
-- (void)enableShortcutRecorders:(BOOL)enabled
-{
-  for (SpectacleShortcutRecorder *shortcutRecorder in _shortcutRecorders.allValues) {
-    if (!enabled) {
-      shortcutRecorder.shortcut = nil;
-    }
-    shortcutRecorder.enabled = enabled;
-  }
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 @end
